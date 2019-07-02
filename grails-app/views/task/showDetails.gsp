@@ -72,10 +72,16 @@
                         <a class="btn btn-default btn-small"
                            href="${createLink(action: 'show', id: taskInstance?.id)}">Transcribe/Validate Task</a>
                         <cl:ifAdmin>
-                            <a class="btn btn-small btn-warning"
-                               href="${createLink(action: 'resetTranscribedStatus', id: taskInstance?.id)}">Reset transcribed status</a>
-                            <a class="btn btn-small btn-warning"
-                               href="${createLink(action: 'resetValidatedStatus', id: taskInstance?.id)}">Reset validated status</a>
+                            <g:if test="${taskInstance?.project.requiredNumberOfTranscriptions > 1}">
+                                <a class="btn btn-small btn-warning disabled">Reset transcribed status</a>
+                                <a class="btn btn-small btn-warning disabled">Reset validated status</a>
+                            </g:if>
+                            <g:else>
+                                <a class="btn btn-small btn-warning"
+                                   href="${createLink(action: 'resetTranscribedStatus', id: taskInstance?.id)}">Reset transcribed status</a>
+                                <a class="btn btn-small btn-warning"
+                                   href="${createLink(action: 'resetValidatedStatus', id: taskInstance?.id)}">Reset validated status</a>
+                            </g:else>
                         </cl:ifAdmin>
                     </div>
                 </div>
@@ -103,14 +109,7 @@
                         <tr>
                             <td>Transcribed</td>
                             <td>
-                                <g:if test="${taskInstance.dateFullyTranscribed}">
-                                    ${taskInstance.dateFullyTranscribed?.format("yyyy-MM-dd HH:mm:ss")} by ${cl.emailForUserId(id: taskInstance.fullyTranscribedBy) ?: "<span class='muted'>unknown</span>"}
-                                </g:if>
-                                <g:else>
-                                    <span class="muted">
-                                        Not transcribed
-                                    </span>
-                                </g:else>
+                                <cl:transcribers task="${taskInstance}"/>
                             </td>
                         </tr>
                         <tr>
@@ -118,7 +117,7 @@
                             <td>Validated</td>
                             <td>
                                 <g:if test="${taskInstance.dateFullyValidated}">
-                                    ${taskInstance.dateFullyValidated?.format("yyyy-MM-dd HH:mm:ss")} by ${cl.emailForUserId(id: taskInstance.fullyValidatedBy) ?: "<span class='muted'>unknown</span>"}
+                                    ${taskInstance.dateFullyValidated?.format("yyyy-MM-dd HH:mm:ss")} by ${cl.displayNameForUserId(id: taskInstance.fullyValidatedBy) ?: "<span class='muted'>unknown</span>"}
                                 </g:if>
                                 <g:else>
                                     <span class="muted">
@@ -158,7 +157,7 @@
                                 <ul>
                                     <g:each in="${taskInstance.viewedTasks?.sort({ it.lastView })}" var="view">
                                         <li>Viewed by <cl:userDisplayString
-                                                id="${view.userId}"/> ${view.numberOfViews > 1 ? "(" + view.numberOfViews + " times) " : ""} on ${view.lastUpdated?.format("yyyy-MM-dd HH:mm:ss")})</li>
+                                                id="${view.userId}"/> ${view.numberOfViews > 1 ? "(" + view.numberOfViews + " times) " : ""} on ${view.lastUpdated?.format("yyyy-MM-dd HH:mm:ss")}</li>
                                     </g:each>
                                 </ul>
                             </td>
@@ -212,8 +211,8 @@
                             <td>${field.value}</td>
                             <td>${field.created?.format("yyyy-MM-dd HH:mm:ss")}</td>
                             <td>${field.updated?.format("yyyy-MM-dd HH:mm:ss")}</td>
-                            <td><cl:emailForUserId id="${field.transcribedByUserId}"/></td>
-                            <td><cl:emailForUserId id="${field.validatedByUserId}"/></td>
+                            <td><cl:displayNameForUserId id="${field.transcribedByUserId}"/></td>
+                            <td><cl:displayNameForUserId id="${field.validatedByUserId}"/></td>
                         </tr>
                     </g:each>
                     </tbody>

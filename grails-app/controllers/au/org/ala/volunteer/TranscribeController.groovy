@@ -36,7 +36,7 @@ class TranscribeController {
 
         if (taskInstance) {
 
-            boolean isLockedByOtherUser = auditService.isTaskLockedForUser(taskInstance, currentUserId)
+            boolean isLockedByOtherUser = auditService.isTaskLockedForTranscription(taskInstance, currentUserId)
 
             def isAdmin = userService.isAdmin()
             if (isLockedByOtherUser && !isAdmin) {
@@ -60,7 +60,7 @@ class TranscribeController {
 
             def isValidator = userService.isValidator(project)
             log.info(currentUserId + " has role: ADMIN = " + userService.isAdmin() + " &&  VALIDATOR = " + isValidator)
-            if (taskInstance.fullyTranscribedBy && taskInstance.fullyTranscribedBy != currentUserId && !userService.isAdmin()) {
+            if (taskInstance.isFullyTranscribed && !taskInstance.hasBeenTranscribedByUser(currentUserId) && !userService.isAdmin()) {
                 isReadonly = "readonly"
             }
 
@@ -77,9 +77,20 @@ class TranscribeController {
             response.addHeader(HEADER_CACHE_CONTROL, "no-store");
 
             //retrieve the existing values
-            Map recordValues = fieldSyncService.retrieveFieldsForTask(taskInstance)
+            Map recordValues = fieldSyncService.retrieveFieldsForTask(taskInstance, currentUserId)
             def adjacentTasks = taskService.getAdjacentTasksBySequence(taskInstance)
-            render(view: 'templateViews/' + project.template.viewName, model: [taskInstance: taskInstance, recordValues: recordValues, isReadonly: isReadonly, template: project.template, nextTask: adjacentTasks.next, prevTask: adjacentTasks.prev, sequenceNumber: adjacentTasks.sequenceNumber, complete: params.complete, thumbnail: multimediaService.getImageThumbnailUrl(taskInstance.multimedia.first(), true)])
+            def model = [
+                    taskInstance: taskInstance,
+                    recordValues: recordValues,
+                    isReadonly: isReadonly,
+                    template: project.template,
+                    nextTask: adjacentTasks.next,
+                    prevTask: adjacentTasks.prev,
+                    sequenceNumber: adjacentTasks.sequenceNumber,
+                    complete: params.complete,
+                    thumbnail: multimediaService.getImageThumbnailUrl(taskInstance.multimedia.first(), true)
+            ]
+            render(view: 'templateViews/' + project.template.viewName, model: model)
         } else {
             redirect(view: 'list', controller: "task")
         }
@@ -136,12 +147,15 @@ class TranscribeController {
     }
 
     /**
-     * Sync fields.
+     * Sync fields
      */
     def savePartial() {
         commonSave(params, false)
     }
 
+    /**
+     * CommonSave (cannot be used for validator's save fields. For multi transcriptions task, validators don't have their own transcription record, except for validator's fields
+     */
     private def commonSave(params, markTranscribed) {
         def currentUser = userService.currentUserId
 
@@ -152,13 +166,26 @@ class TranscribeController {
 
         if (currentUser != null) {
             def taskInstance = Task.get(params.id)
+
+            Transcription transcription = taskInstance.findUserTranscription(currentUser)
+            if (!transcription) {
+                // try to reuse existing transcription which could have been reset
+                if (taskInstance.project.requiredNumberOfTranscriptions == 1) {
+                    transcription = taskInstance.transcriptions[0]
+                }
+                if (!transcription) {
+                    transcription = taskInstance.addTranscription()
+                }
+            }
+
             def seconds = params.getInt('timeTaken', null)
             if (seconds) {
                 taskInstance.timeToTranscribe = (taskInstance.timeToTranscribe ?: 0) + seconds
+                transcription.recordTranscriptionTime(seconds)
             }
             def skipNextAction = params.getBoolean('skipNextAction', false)
             WebUtils.cleanRecordValues(params.recordValues)
-            fieldSyncService.syncFields(taskInstance, params.recordValues, currentUser, markTranscribed, false, null, fieldSyncService.truncateFieldsForProject(taskInstance.project), request.remoteAddr)
+            fieldSyncService.syncFields(taskInstance, params.recordValues, currentUser, markTranscribed, false, null, fieldSyncService.truncateFieldsForProject(taskInstance.project), request.remoteAddr, transcription)
             if (!taskInstance.hasErrors()) {
                 updatePicklists(taskInstance)
                 if (skipNextAction) redirect(action: 'showNextFromProject', id: taskInstance.project.id, params: [prevId: taskInstance.id, prevUserId: currentUser, complete: params.id])

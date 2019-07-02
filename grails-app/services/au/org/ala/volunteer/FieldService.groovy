@@ -40,14 +40,14 @@ class FieldService {
                where f.superceded = false and
                f.name in (:fieldNames) and
                f.task.project = :projectInstance and
-               (lower(f.value) like :query or lower(f.task.fullyTranscribedBy) like :query or lower(f.task.externalIdentifier) like :query)
+               (lower(f.value) like :query or lower(f.transcription.fullyTranscribedBy) like :query or lower(f.task.externalIdentifier) like :query)
                """, [projectInstance: projectInstance, query: '%' + query + '%', fieldNames: fieldNames], params)
         } else {
             taskList = Field.executeQuery(
                     """select distinct f.task from Field f
                where f.superceded = false and
                f.task.project = :projectInstance and
-               (lower(f.value) like :query or lower(f.task.fullyTranscribedBy) like :query or lower(f.task.externalIdentifier) like :query)
+               (lower(f.value) like :query or lower(f.transcription.fullyTranscribedBy) like :query or lower(f.task.externalIdentifier) like :query)
                """, [projectInstance: projectInstance, query: '%' + query + '%'], params)
         }
 
@@ -64,14 +64,14 @@ class FieldService {
                where f.superceded = false and
                f.name in (:fieldNames) and
                f.task.project = :projectInstance and
-               (lower(f.value) like :query or lower(f.task.fullyTranscribedBy) like :query or lower(f.task.externalIdentifier) like :query)
+               (lower(f.value) like :query or lower(f.transcription.fullyTranscribedBy) like :query or lower(f.task.externalIdentifier) like :query)
                """, [projectInstance: projectInstance, query: '%' + query + '%', fieldNames: fieldNames])
         } else {
             count = Field.executeQuery(
                     """select count(distinct f.task) from Field f
                where f.superceded = false and
                f.task.project = :projectInstance and
-               (lower(f.value) like :query or lower(f.task.fullyTranscribedBy) like :query or lower(f.task.externalIdentifier) like :query)
+               (lower(f.value) like :query or lower(f.transcription.fullyTranscribedBy) like :query or lower(f.task.externalIdentifier) like :query)
                """, [projectInstance: projectInstance, query: '%' + query + '%'])
         }
         return count?.get(0) as Integer
@@ -81,15 +81,19 @@ class FieldService {
         def fieldValues = Field.executeQuery(
                 """select f from Field f
                where f.superceded = false and
-               f.task in (:list) order by f.task.id""", [list: taskList])
+               f.task in (:list) 
+               order by f.task.id""", [list: taskList])
         fieldValues.toList()
     }
 
-    List getAllFieldNames(List<Task> taskList) {
+    List getAllFieldNames(List<Task> taskList, boolean retrieveValidatedOnly = false ) {
+
         def fieldValues = Field.executeQuery(
                 """select distinct f.name from Field f
-               where f.superceded = false and
-               f.task in (:list) order by f.name""", [list: taskList])
+               where f.superceded = false 
+               and f.task in (:list)
+               ${retrieveValidatedOnly? 'and f.transcription is null': ''} 
+               order by f.name""", [list: taskList])
         fieldValues.toList()
     }
 
@@ -133,32 +137,7 @@ class FieldService {
         return null
     }
 
-    int getLastSequenceNumberForProject(Project project) {
-        def taskList = Task.findAllByProject(project)
-        def c = Field.createCriteria()
-
-        if (taskList) {
-            def fields = c {
-                and {
-                    inList("task", taskList)
-                    eq('name', 'sequenceNumber')
-                }
-                projections {
-                    max('value')
-                }
-            }
-            try{
-                return fields[0] as Integer ?: 0
-            } catch (NumberFormatException e) {
-                log.debug("Can not extract sequence number from ${fields[0]}")
-                // fall through to default value
-            }
-        }
-
-        return 0
-    }
-
-    Field setFieldValueForTask(Task task, String fieldName, int recordIndex, String value, String userId = "system") {
+    Field setFieldValueForTask(Task task, String fieldName, int recordIndex, String value, String userId = UserService.SYSTEM_USER) {
         // Check if there is an existing (current) value for this field/index
         if (task == null || fieldName == null || value == null) {
             return null
